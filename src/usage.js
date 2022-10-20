@@ -16,11 +16,11 @@ function search(flagKey) {
 
       if (items.length > 0) {
         console.log(
-          `✅ [${flagKey}] No references found in code. Should be safe to archive!`
+          `❗️ [${flagKey}] References found in code. Remove references before archiving!`
         );
       } else {
         console.log(
-          `❗️ [${flagKey}] References found in code. Remove references before archiving!`
+          `✅ [${flagKey}] No references found in code. Should be safe to archive!`
         );
       }
     })
