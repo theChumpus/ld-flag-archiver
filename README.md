@@ -15,7 +15,7 @@ export LD_API_TOKEN=<insert API token here>
 ## How to run
 
 ```
-node index.js <path to CSV>
+yarn archive <path to CSV>
 ```
 
 ## CSV format
