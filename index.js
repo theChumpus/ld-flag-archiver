@@ -6,16 +6,43 @@ const eachSeries = require("async/eachSeries");
 
 const baseUrl = "https://app.launchdarkly.com/api/v2/flags/default";
 
-function fetchFlag(flagKey) {
-  console.log(`Fetch ${flagKey}...`);
+const flagUrl = (flagKey) => `${baseUrl}/${flagKey}`;
 
+const getHeaders = (headers = {}) => ({
+  ...headers,
+  Authorization: process.env.LD_API_TOKEN,
+});
+
+function fetchFlag(flagKey) {
   return axios
     .get(`${baseUrl}/${flagKey}`, {
-      headers: {
-        Authorization: process.env.LD_API_TOKEN,
-      },
+      headers: getHeaders(),
     })
-    .then((response) => response.data);
+    .then((response) => {
+      trackRateLimit(response.headers);
+
+      return response.data;
+    });
+}
+
+let rateLimitRemaining;
+let rateLimitReset;
+
+function trackRateLimit(headers) {
+  rateLimitRemaining = headers["x-ratelimit-route-remaining"];
+  rateLimitReset = headers["x-ratelimit-reset"];
+}
+
+function waitForRateLimitReset() {
+  if (rateLimitRemaining === undefined || rateLimitRemaining > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const resetIn = rateLimitReset - Date.now();
+    console.log(`⏳ Wait for ${resetIn} ms for rate limit to reset`);
+    setTimeout(() => resolve(), resetIn);
+  });
 }
 
 function archiveFlag(flagKey) {
@@ -31,23 +58,25 @@ function archiveFlag(flagKey) {
   };
 
   return axios
-    .patch(`${baseUrl}/${flagKey}`, body, {
-      headers: {
+    .patch(flagUrl(flagKey), body, {
+      headers: getHeaders({
         "Content-Type": "application/json",
-        Authorization: process.env.LD_API_TOKEN,
-      },
+      }),
     })
     .then((response) => {
+      trackRateLimit(response.headers);
+
       const isArchived = response.data.archived;
       if (isArchived === true) {
-        console.log(`${flagKey} archived!`);
+        console.log(`✅ ${flagKey} archived!`);
       }
       return isArchived;
     });
 }
 
 function fetchAndArchiveFlag(flagKey) {
-  return fetchFlag(flagKey)
+  return waitForRateLimitReset()
+    .then(() => fetchFlag(flagKey))
     .then((data) => {
       const isArchived = data.archived;
 
@@ -55,12 +84,12 @@ function fetchAndArchiveFlag(flagKey) {
         return archiveFlag(flagKey);
       }
 
-      console.log(`${flagKey} is already archived`);
+      console.log(`✅ ${flagKey} is already archived`);
 
       return isArchived;
     })
     .catch((err) => {
-      console.error("Could not archive flag", err);
+      console.error("❌ Could not archive flag", err);
     });
 }
 
@@ -90,7 +119,7 @@ function run() {
 
   parseCsv(process.argv[2])
     .then((output) => {
-      console.log(`Archiving ${output.length} flags`);
+      console.log(`➡️  Archiving ${output.length} flags`);
 
       const iteratee = (flagKey, callback) => {
         return fetchAndArchiveFlag(flagKey).then(() => callback());
